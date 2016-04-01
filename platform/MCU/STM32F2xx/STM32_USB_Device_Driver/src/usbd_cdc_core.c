@@ -249,6 +249,7 @@ static uint32_t cdcCmd = 0xFF;
 static uint32_t cdcLen = 0;
 
 static uint8_t cdcConfigured = 0;
+uint32_t cdcHoldoffTimer = 0;
 
 /* CDC interface class callbacks structure */
 USBD_Class_cb_TypeDef  USBD_CDC_cb =
@@ -539,6 +540,7 @@ static uint8_t  usbd_cdc_Init (void  *pdev,
   APP_FOPS.pIf_Init();
 
   USB_Rx_State = 1;
+  cdcHoldoffTimer = 0;
   cdcConfigured = 1;
 
   /* Prepare Out endpoint to receive next packet */
@@ -645,7 +647,7 @@ static uint8_t  usbd_cdc_Setup (void  *pdev,
       else /* No Data request */
       {
         /* Transfer the command to the interface layer */
-        APP_FOPS.pIf_Ctrl(req->bRequest, NULL, 0);
+        return APP_FOPS.pIf_Ctrl(req->bRequest, NULL, 0);
       }
 
       return USBD_OK;
@@ -708,16 +710,18 @@ static uint8_t  usbd_cdc_EP0_RxReady (void  *pdev)
 {
   usbd_cdc_Change_Open_State(1);
 
+  uint8_t res = USBD_OK;
+
   if (cdcCmd != NO_CMD)
   {
     /* Process the data */
-    APP_FOPS.pIf_Ctrl(cdcCmd, CmdBuff, cdcLen);
+    res = APP_FOPS.pIf_Ctrl(cdcCmd, CmdBuff, cdcLen);
 
     /* Reset the command variable to default value */
     cdcCmd = NO_CMD;
   }
 
-  return USBD_OK;
+  return res;
 }
 
 static inline uint32_t usbd_Last_Tx_Packet_size(void *pdev, uint8_t epnum)
@@ -747,6 +751,9 @@ static uint8_t  usbd_cdc_DataIn (void *pdev, uint8_t epnum)
     return USBD_OK;
 
   USB_Tx_length = ring_data_contig(USB_TX_BUFFER_SIZE, USB_Tx_Buffer_head, USB_Tx_Buffer_tail);
+
+  if (cdcHoldoffTimer)
+    USB_Tx_length = 0;
 
   if (USB_Tx_length) {
     USB_Tx_length = MIN(USB_Tx_length, CDC_DATA_IN_PACKET_SIZE);
@@ -851,7 +858,7 @@ static void usbd_cdc_Schedule_In(void *pdev)
     return;
   }
 
-  if (!USB_Tx_length)
+  if (!USB_Tx_length || cdcHoldoffTimer)
     return;
 
   USB_Tx_State = 1;
@@ -876,6 +883,9 @@ static void usbd_cdc_Schedule_In(void *pdev)
 static uint8_t  usbd_cdc_SOF (void *pdev)
 {
   static uint32_t FrameCount = 0;
+
+  if (cdcHoldoffTimer)
+    cdcHoldoffTimer--;
 
   if (FrameCount++ == CDC_IN_FRAME_INTERVAL)
   {

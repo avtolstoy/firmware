@@ -56,6 +56,8 @@ extern volatile uint32_t APP_Rx_ptr_in;    /* Increment this pointer or roll it 
                                      start address when writing received data
                                      in the buffer APP_Rx_Buffer. */
 
+extern uint32_t cdcHoldoffTimer;
+
 /* Private function prototypes -----------------------------------------------*/
 static uint16_t APP_Init     (void);
 static uint16_t APP_DeInit   (void);
@@ -135,16 +137,35 @@ static uint16_t APP_Ctrl (uint32_t Cmd, uint8_t* Buf, uint32_t Len)
         /* Not needed for this driver */
         break;
 
-    case SET_LINE_CODING:
-        linecoding.bitrate = (uint32_t)(Buf[0] | (Buf[1] << 8) | (Buf[2] << 16) | (Buf[3] << 24));
-        linecoding.format = Buf[4];
-        linecoding.paritytype = Buf[5];
-        linecoding.datatype = Buf[6];
+    case SET_LINE_CODING: {
+          /* This is a workaround for Microsoft sermouse driver which might attempt to
+           * overtake our USB Serial. This happens mainly when there is 'M' or 'B' character
+           * somewhere in the beginning of the TX buffer. sermouse driver will ask us to switch
+           * to 1200 7N1 mode and will expect any data within some period of time (200ms - 1000ms ?).
+           * It will also attempt to do this several times with different <= 9600 baudrates!
+           * Start a holdoff timer which is decremented in SOF callback and do not attempt to transmit
+           * any data until it reaches 0.
+           */
+          uint32_t bitrate = ((uint32_t)(Buf[0] | (Buf[1] << 8) | (Buf[2] << 16) | (Buf[3] << 24)));
+          if ((bitrate == 1200 && Buf[4] == 0 && Buf[5] == 0 && (/*Buf[6] == 0 || */Buf[6] == 7)) || 
+              (cdcHoldoffTimer && bitrate < 9600))
+          {
+            // Restart holdoff timer
+            cdcHoldoffTimer = 1000;
+            // Don't accept the baudrate
+            return USBD_FAIL;
+          }
 
-        //Callback handler when the host sets a specific linecoding
-        if (NULL != APP_LineCodingBitRateHandler)
-        {
-            APP_LineCodingBitRateHandler(linecoding.bitrate);
+          linecoding.bitrate = bitrate;
+          linecoding.format = Buf[4];
+          linecoding.paritytype = Buf[5];
+          linecoding.datatype = Buf[6];
+
+          //Callback handler when the host sets a specific linecoding
+          if (NULL != APP_LineCodingBitRateHandler)
+          {
+              APP_LineCodingBitRateHandler(linecoding.bitrate);
+          }
         }
         break;
 
