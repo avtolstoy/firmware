@@ -83,6 +83,21 @@
 #define SET_CONTROL_LINE_STATE                  0x22
 #define SEND_BREAK                              0x23
 #define NO_CMD                                  0xFF
+#define ACM_SERIAL_STATE                        0x20
+
+#define CDC_DTR                                 0x01
+#define CDC_RTS                                 0x02
+#define CDC_NDTR                                0x00
+#define CDC_NRTS                                0x00
+
+/* Workaround for Windows serial enumeration */
+enum SerialEnumerationState {
+  SERIAL_ENUM_STATE_DEFAULT,
+  SERIAL_ENUM_STATE_INIT,
+  SERIAL_ENUM_STATE_SETUP,
+  SERIAL_ENUM_STATE_WAIT,
+  SERIAL_ENUM_STATE_CONNECT_IDLE
+};
 
 /**
   * @}

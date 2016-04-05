@@ -32,6 +32,7 @@
 #include "usb_conf.h"
 #include "usbd_conf.h"
 #include "usbd_cdc_core.h"
+#include "debug.h"
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -57,6 +58,8 @@ extern volatile uint32_t APP_Rx_ptr_in;    /* Increment this pointer or roll it 
                                      in the buffer APP_Rx_Buffer. */
 
 extern uint32_t cdcHoldoffTimer;
+extern uint8_t cdcControlState;
+extern uint8_t cdcEnumerationState;
 
 /* Private function prototypes -----------------------------------------------*/
 static uint16_t APP_Init     (void);
@@ -104,6 +107,73 @@ static uint16_t APP_DeInit(void)
     //Do Nothing
     return USBD_OK;
 }
+#define nullptr NULL
+static void usbd_cdc_ManageEnumeration() {
+  if (cdcEnumerationState != SERIAL_ENUM_STATE_DEFAULT && cdcHoldoffTimer == 0)
+    return;
+
+  switch (cdcEnumerationState) {
+    case SERIAL_ENUM_STATE_DEFAULT: {
+      if (cdcControlState == (CDC_NDTR | CDC_NRTS)) {
+        cdcHoldoffTimer = 500;
+        cdcEnumerationState = SERIAL_ENUM_STATE_INIT;
+      }
+    }
+    break;
+
+    case SERIAL_ENUM_STATE_INIT: {
+      if (cdcControlState == (CDC_DTR | CDC_NRTS)) {
+        cdcHoldoffTimer = 500;
+        cdcEnumerationState = SERIAL_ENUM_STATE_SETUP;
+      }
+    }
+    break;
+
+    case SERIAL_ENUM_STATE_SETUP: {
+      // 1200 7N1
+      if (linecoding.bitrate == 1200 && linecoding.datatype == 7 &&
+          linecoding.format == 0 && linecoding.paritytype == 0 ) {
+        switch (cdcControlState) {
+          case (CDC_NDTR | CDC_NRTS):
+            cdcHoldoffTimer = 500;
+          break;
+          case (CDC_DTR | CDC_NRTS):
+            cdcHoldoffTimer = 500;
+          break;
+          case (CDC_NDTR | CDC_RTS):
+            cdcHoldoffTimer = 1000;
+            cdcEnumerationState = SERIAL_ENUM_STATE_WAIT;
+          break;
+        } // switch (cdcControlState)
+      } else {
+        cdcHoldoffTimer = 0;
+        cdcEnumerationState = SERIAL_ENUM_STATE_CONNECT_IDLE;
+      }
+    }
+    break;
+
+    case SERIAL_ENUM_STATE_WAIT: {
+      switch (cdcControlState) {
+        case (CDC_DTR | CDC_NRTS):
+          cdcHoldoffTimer = 500;
+        break;
+        case (CDC_DTR | CDC_RTS):
+          cdcHoldoffTimer = 500;
+          cdcEnumerationState = SERIAL_ENUM_STATE_SETUP;
+        break;
+        case (CDC_NDTR | CDC_RTS):
+          cdcHoldoffTimer = 0;
+          cdcEnumerationState = SERIAL_ENUM_STATE_CONNECT_IDLE;
+        break;
+      }
+    }
+    break;
+
+    case SERIAL_ENUM_STATE_CONNECT_IDLE:
+    default:
+    break;
+  }
+}
 
 /**
  * @brief  APP_Ctrl
@@ -138,28 +208,15 @@ static uint16_t APP_Ctrl (uint32_t Cmd, uint8_t* Buf, uint32_t Len)
         break;
 
     case SET_LINE_CODING: {
-          /* This is a workaround for Microsoft sermouse driver which might attempt to
-           * overtake our USB Serial. This happens mainly when there is 'M' or 'B' character
-           * somewhere in the beginning of the TX buffer. sermouse driver will ask us to switch
-           * to 1200 7N1 mode and will expect any data within some period of time (200ms - 1000ms ?).
-           * It will also attempt to do this several times with different <= 9600 baudrates!
-           * Start a holdoff timer which is decremented in SOF callback and do not attempt to transmit
-           * any data until it reaches 0.
-           */
           uint32_t bitrate = ((uint32_t)(Buf[0] | (Buf[1] << 8) | (Buf[2] << 16) | (Buf[3] << 24)));
-          if ((bitrate == 1200 && Buf[4] == 0 && Buf[5] == 0 && (/*Buf[6] == 0 || */Buf[6] == 7)) || 
-              (cdcHoldoffTimer && bitrate < 9600))
-          {
-            // Restart holdoff timer
-            cdcHoldoffTimer = 1000;
-            // Don't accept the baudrate
-            return USBD_FAIL;
-          }
 
           linecoding.bitrate = bitrate;
           linecoding.format = Buf[4];
           linecoding.paritytype = Buf[5];
           linecoding.datatype = Buf[6];
+
+          DEBUG_D("SET_LINE_CODING %d %d %d %d", linecoding.bitrate, linecoding.format,
+                linecoding.paritytype, linecoding.datatype);
 
           //Callback handler when the host sets a specific linecoding
           if (NULL != APP_LineCodingBitRateHandler)
@@ -180,7 +237,9 @@ static uint16_t APP_Ctrl (uint32_t Cmd, uint8_t* Buf, uint32_t Len)
         break;
 
     case SET_CONTROL_LINE_STATE:
-        /* Not needed for this driver */
+        cdcControlState = Buf[0];
+        DEBUG_D("SET_CONTROL_LINE_STATE DTR=%d RTS=%d", (bool)(cdcControlState & CDC_DTR), (bool)(cdcControlState & CDC_RTS));
+        usbd_cdc_ManageEnumeration();
         break;
 
     case SEND_BREAK:

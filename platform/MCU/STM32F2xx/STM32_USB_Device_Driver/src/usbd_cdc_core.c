@@ -250,6 +250,21 @@ static uint32_t cdcLen = 0;
 
 static uint8_t cdcConfigured = 0;
 uint32_t cdcHoldoffTimer = 0;
+uint8_t cdcControlState = 0;
+uint8_t cdcEnumerationState = SERIAL_ENUM_STATE_DEFAULT;
+
+#pragma pack(push, 1)
+typedef struct {
+  uint8_t bmRequestType;
+  uint8_t bNotification;
+  uint16_t wValue;
+  uint16_t wIndex;
+  uint16_t wLength;
+  uint16_t wData;
+} USBD_CDC_Notice;
+#pragma pack(pop)
+
+USBD_CDC_Notice cdcNotice = {0};
 
 /* CDC interface class callbacks structure */
 USBD_Class_cb_TypeDef  USBD_CDC_cb =
@@ -541,7 +556,23 @@ static uint8_t  usbd_cdc_Init (void  *pdev,
 
   USB_Rx_State = 1;
   cdcHoldoffTimer = 0;
+  cdcControlState = 0;
+  cdcEnumerationState = SERIAL_ENUM_STATE_DEFAULT;
   cdcConfigured = 1;
+
+  cdcNotice.bmRequestType = 0xA0;
+  cdcNotice.bNotification = ACM_SERIAL_STATE;
+  cdcNotice.wValue = 0;
+  cdcNotice.wIndex = 0;
+  // DSR = 1
+  cdcNotice.wData = 0x02;
+
+  // Send SERIAL_STATE notification
+  DCD_EP_Tx (pdev,
+             CDC_CMD_EP,
+             (uint8_t*)&cdcNotice,
+             sizeof(cdcNotice));
+
 
   /* Prepare Out endpoint to receive next packet */
   DCD_EP_PrepareRx(pdev,
@@ -647,7 +678,7 @@ static uint8_t  usbd_cdc_Setup (void  *pdev,
       else /* No Data request */
       {
         /* Transfer the command to the interface layer */
-        return APP_FOPS.pIf_Ctrl(req->bRequest, NULL, 0);
+        return APP_FOPS.pIf_Ctrl(req->bRequest, (uint8_t*)&req->wValue, 2);
       }
 
       return USBD_OK;
