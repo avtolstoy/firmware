@@ -35,6 +35,17 @@ void setADCSampleTime(uint8_t ADC_SampleTime)
   HAL_ADC_Set_Sample_Time(ADC_SampleTime);
 }
 
+/*
+ * @brief  Override the default ADC Sampling mode
+ * @param  mode: The sampling mode
+ *
+ * @retval None
+ */
+void setADCMode(uint32_t mode)
+{
+    HAL_ADC_Set_Mode(mode, 0xffffffff, NULL);
+}
+
 long map(long value, long fromStart, long fromEnd, long toStart, long toEnd)
 {
   return (value - fromStart) * (toEnd - toStart) / (fromEnd - fromStart) + toStart;

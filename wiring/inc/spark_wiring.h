@@ -62,6 +62,9 @@ extern "C" {
 */
 void setADCSampleTime(uint8_t ADC_SampleTime);
 int32_t analogRead(uint16_t pin);
+void setADCMode(uint32_t mode);
+int32_t analogReadSamples(uint16_t pin, void* sampleBuffer, uint32_t size);
+
 
 /*
 * GPIO

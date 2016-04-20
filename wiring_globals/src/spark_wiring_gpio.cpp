@@ -179,6 +179,34 @@ int32_t analogRead(pin_t pin)
 }
 
 /*
+ * @brief Sample analog value of a pin multiple times
+ * @param size: Buffer size in _bytes_
+ * @returns Number of samples acquired
+ * Note: Depending on the current sampling mode, the sample size may be either 16 bits or 32 bits
+ *       (e.g. in Interleaved mode)
+ */
+int32_t analogReadSamples(uint16_t pin, void* sampleBuffer, uint32_t size)
+{
+  // Allow people to use 0-7 to define analog pins by checking to see if the values are too low.
+  if(pin < FIRST_ANALOG_PIN)
+  {
+    pin = pin + FIRST_ANALOG_PIN;
+  }
+
+  // Safety check
+  if( !pinAvailable(pin) ) {
+    return 0;
+  }
+
+  if(HAL_Validate_Pin_Function(pin, PF_ADC)!=PF_ADC)
+  {
+    return 0;
+  }
+
+  return HAL_ADC_Read_Samples(pin, sampleBuffer, size);
+}
+
+/*
  * @brief Should take an integer 0-255 and create a 500Hz PWM signal with a duty cycle from 0-100%.
  * On Photon, DAC1 and DAC2 act as true analog outputs(values: 0 to 4095) using onchip DAC peripheral
  */
