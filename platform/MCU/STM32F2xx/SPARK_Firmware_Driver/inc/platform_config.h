@@ -92,6 +92,7 @@
 #define BUTTON1_EXTI_IRQ_PRIORITY           7
 #define BUTTON1_EXTI_IRQ_INDEX              24
 #define	BUTTON1_EXTI_TRIGGER		        EXTI_Trigger_Falling
+#define BUTTON1_MIRROR_SUPPORTED            1
 #elif PLATFORM_TEACUP_PIGTAIL_DEV == PLATFORM_ID || \
       PLATFORM_PHOTON_PRODUCTION == PLATFORM_ID || \
       PLATFORM_TEACUP_PIGTAIL_PRODUCTION == PLATFORM_ID || \
@@ -111,6 +112,7 @@
 #define BUTTON1_EXTI_IRQ_PRIORITY           7
 #define BUTTON1_EXTI_IRQ_INDEX              39
 #define BUTTON1_EXTI_TRIGGER                EXTI_Trigger_Falling
+#define BUTTON1_MIRROR_SUPPORTED            1
 #endif
 
 #define UI_TIMER_FREQUENCY                  100	/* 100Hz -> 10ms */
@@ -123,13 +125,13 @@
       PLATFORM_ELECTRON_PRODUCTION == PLATFORM_ID
 //BM-14 and ELECTRON uses USB_OTG_FS peripheral
 #define USE_USB_OTG_FS
-#define USB_OTG_MAX_TX_FIFOS 4
+#define USB_OTG_MAX_TX_FIFOS (4 * 2)
 //BM-14 has serial flash
 #elif   PLATFORM_PHOTON_DEV == PLATFORM_ID || \
         PLATFORM_PHOTON_PRODUCTION == PLATFORM_ID
 //BM-09 uses USB_OTG_HS peripheral
 #define USE_USB_OTG_HS
-#define USB_OTG_MAX_TX_FIFOS 6
+#define USB_OTG_MAX_TX_FIFOS (6 * 2)
 #endif
 
 #if   PLATFORM_TEACUP_PIGTAIL_DEV == PLATFORM_ID || \

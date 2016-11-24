@@ -19,13 +19,25 @@
 
  #include "application.h"
 
+Serial1LogHandler dbg(115200, LOG_LEVEL_WARN);
+SYSTEM_MODE(MANUAL);
+STARTUP(System.buttonMirror(D1, FALLING, true));
+
+void handler(system_event_t ev, int data) {
+    LOG(WARN, "Click %d", data);
+}
 
 /* executes once at startup */
 void setup() {
-
+    System.on(button_click, handler);
 }
 
 /* executes continuously after setup() runs */
 void loop() {
-
+    auto pinmap = HAL_Pin_Map();
+    pinMode(D1, INPUT_PULLDOWN);
+    EXTI_GenerateSWInterrupt(pinmap[D1].gpio_pin);
+    delay(300);
+    pinMode(D1, INPUT_PULLUP);
+    delay(1000);
 }
