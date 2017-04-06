@@ -448,6 +448,13 @@ int wlan_supplicant_start()
     return result;
 }
 
+int wlan_supplicant_cancel(int isr)
+{
+    if (eap_context.supplicant_running) {
+        besl_supplicant_cancel(eap_context.supplicant_workspace, isr);
+    }
+    return 0;
+}
 
 int wlan_supplicant_stop()
 {
@@ -512,6 +519,7 @@ static wiced_result_t wlan_join() {
                     if (wlan_supplicant_start()) {
                         // Early error
                         wlan_restart();
+                        wlan_supplicant_cancel(0);
                         wlan_supplicant_stop();
                         result = WICED_ERROR;
                         join = false;
@@ -536,6 +544,7 @@ static wiced_result_t wlan_join() {
                     // while stopping supplicant
                     // ¯\_(ツ)_/¯
                     wlan_restart();
+                    wlan_supplicant_cancel(0);
                 }
                 wlan_supplicant_stop();
             }
@@ -1216,6 +1225,7 @@ void wlan_connect_cancel(bool called_from_isr)
     LOG(TRACE, "connect cancel");
     wiced_network_up_cancel = 1;
     wwd_wifi_join_cancel(called_from_isr ? WICED_TRUE : WICED_FALSE);
+    wlan_supplicant_cancel((int)called_from_isr);
 }
 
 /**
