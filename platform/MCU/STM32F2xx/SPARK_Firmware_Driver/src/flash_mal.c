@@ -564,10 +564,11 @@ bool FLASH_AddToFactoryResetModuleSlot(flash_device_t sourceDeviceID, uint32_t s
 
 bool FLASH_ClearFactoryResetModuleSlot(void)
 {
-    // FIXME: There's no function that acts as memset() for DCT
-    const char data[sizeof(platform_flash_modules_t)] = { 0 };
-    const size_t offs = FAC_RESET_SLOT * sizeof(platform_flash_modules_t) + DCT_FLASH_MODULES_OFFSET;
-    return (dct_write_app_data(data, offs, sizeof(data)) == 0);
+    // Mark slot as unused
+    const size_t magic_num_offs = DCT_FLASH_MODULES_OFFSET + sizeof(platform_flash_modules_t) * FAC_RESET_SLOT +
+            offsetof(platform_flash_modules_t, magicNumber);
+    const uint16_t magic_num = 0xffff;
+    return (dct_write_app_data(&magic_num, magic_num_offs, sizeof(magic_num)) == 0);
 }
 
 bool FLASH_ApplyFactoryResetImage(copymem_fn_t copy)
@@ -611,43 +612,49 @@ bool FLASH_RestoreFromFactoryResetModuleSlot(void)
 }
 
 //This function called in bootloader to perform the memory update process
-void FLASH_UpdateModules(void (*flashModulesCallback)(bool isUpdating))
+bool FLASH_UpdateModules(void (*flashModulesCallback)(bool isUpdating))
 {
-    //slot 0 is reserved for factory reset module so start from flash_module_index = 1
-    for (size_t flash_module_index = GEN_START_SLOT; flash_module_index < MAX_MODULES_SLOT; flash_module_index++)
-    {
-        const size_t offs = flash_module_index * sizeof(platform_flash_modules_t) + DCT_FLASH_MODULES_OFFSET;
-        platform_flash_modules_t flash_module;
-        dct_read_app_data_copy(offs, &flash_module, sizeof(flash_module));
-        if(flash_module.magicNumber == 0xABCD)
-        {
-            //Turn On RGB_COLOR_MAGENTA toggling during flash updating
-            if(flashModulesCallback)
-            {
-                flashModulesCallback(true);
+    // Copy module info from DCT before updating any modules, since bootloader might load DCT
+    // functions dynamically. FAC_RESET_SLOT is reserved for factory reset module
+    const size_t max_module_count = MAX_MODULES_SLOT - GEN_START_SLOT;
+    platform_flash_modules_t modules[max_module_count];
+    size_t module_offs = DCT_FLASH_MODULES_OFFSET + sizeof(platform_flash_modules_t) * GEN_START_SLOT;
+    size_t module_count = 0;
+    for (size_t i = 0; i < max_module_count; ++i) {
+        const size_t magic_num_offs = module_offs + offsetof(platform_flash_modules_t, magicNumber);
+        uint16_t magic_num = 0;
+        if (dct_read_app_data_copy(magic_num_offs, &magic_num, sizeof(magic_num)) != 0) {
+            return false;
+        }
+        if (magic_num == 0xabcd) {
+            // Copy module info
+            if (dct_read_app_data_copy(module_offs, &modules[module_count], sizeof(platform_flash_modules_t)) != 0) {
+                return false;
             }
-
-            //Copy memory from source to destination based on flash device id
-            FLASH_CopyMemory(flash_module.sourceDeviceID,
-                             flash_module.sourceAddress,
-                             flash_module.destinationDeviceID,
-                             flash_module.destinationAddress,
-                             flash_module.length,
-                             flash_module.module_function,
-                             flash_module.flags);
-
-            // Clear flash module info
-            // FIXME: There's no function that acts as memset() for DCT
-            const char data[sizeof(platform_flash_modules_t)] = { 0 };
-            dct_write_app_data(data, offs, sizeof(data));
-
-            if(flashModulesCallback)
-            {
-                //Turn Off RGB_COLOR_MAGENTA toggling
-                flashModulesCallback(false);
+            // Mark slot as unused
+            magic_num = 0xffff;
+            if (dct_write_app_data(&magic_num, magic_num_offs, sizeof(magic_num)) != 0) {
+                return false;
             }
+            ++module_count;
+        }
+        module_offs += sizeof(platform_flash_modules_t);
+    }
+    for (size_t i = 0; i < module_count; ++i) {
+        const platform_flash_modules_t* module = &modules[i];
+        // Turn On RGB_COLOR_MAGENTA toggling during flash updating
+        if (flashModulesCallback) {
+            flashModulesCallback(true);
+        }
+        // Copy memory from source to destination based on flash device id
+        FLASH_CopyMemory(module->sourceDeviceID, module->sourceAddress, module->destinationDeviceID,
+                module->destinationAddress, module->length, module->module_function, module->flags);
+        // Turn Off RGB_COLOR_MAGENTA toggling
+        if (flashModulesCallback) {
+            flashModulesCallback(false);
         }
     }
+    return true;
 }
 
 const module_info_t* FLASH_ModuleInfo(uint8_t flashDeviceID, uint32_t startAddress)
